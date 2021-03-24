@@ -30,8 +30,7 @@ output_size_y = output_type_size[1]
 output_size_z = output_type_size[2]
 
 # Convert to NIFTI file
-input_img = nib.load(input_type_file)
-resampled_img = resample_to_output(input_img, [ input_size_x/output_size_x, input_size_y/output_size_y, input_size_z/output_size_z ])
-resampled_img = conform(resampled_img, output_type_size, [ input_size_x/output_size_x, input_size_y/output_size_y, input_size_z/output_size_z ])
-print('Actual output size: ', resampled_img.shape)
-nib.save(resampled_img, "interpolation.nii.gz")
+interpolation = resample_to_output(input_type, [ input_size_x/output_size_x, input_size_y/output_size_y, input_size_z/output_size_z ])
+interpolation = conform(interpolation, output_type_size, [ input_size_x/output_size_x, input_size_y/output_size_y, input_size_z/output_size_z ])
+print('Actual output size: ', interpolation.shape)
+nib.save(interpolation, "interpolation.nii.gz")
