@@ -30,7 +30,8 @@ output_size_y = output_type_size[1]
 output_size_z = output_type_size[2]
 
 # Convert to NIFTI file
-interpolation = resample_to_output(input_type, [ input_size_x/output_size_x, input_size_y/output_size_y, input_size_z/output_size_z ])
-interpolation = conform(interpolation, output_type_size, [ input_size_x/output_size_x, input_size_y/output_size_y, input_size_z/output_size_z ])
+voxel_size = [ input_size_x/output_size_x, input_size_y/output_size_y, input_size_z/output_size_z ]
+interpolation = resample_to_output(input_type, voxel_size)
+interpolation = conform(interpolation, output_type_size, voxel_size)
 print('Actual output size: ', interpolation.shape)
 nib.save(interpolation, "interpolation.nii.gz")
