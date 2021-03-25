@@ -65,6 +65,7 @@ def unzip(source_filepath, dest_filepath):
         with open(source_filepath, 'rb') as s_file, \
                 open(dest_filepath, 'wb') as d_file:
             shutil.copyfileobj(s_file, d_file, block_size)
+    f.close()
 
 
 def main():
