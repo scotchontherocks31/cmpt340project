@@ -33,6 +33,14 @@ def extract_required_paths(subfolders):
                 break
     return nifti_paths
 
+def move(source_filepath, dest_filepath):
+    block_size = 65536
+    f = open(source_filepath, 'rb')
+    f.seek(0)
+    with open(source_filepath, 'rb') as s_file, \
+        open(dest_filepath, 'wb') as d_file:
+        shutil.copyfileobj(s_file, d_file, block_size)
+    f.close()
 
 # extract onii-sama from .gz into subdir properly UwU
 def extract_onii_chan(subfolders):
@@ -45,31 +53,36 @@ def extract_onii_chan(subfolders):
             # Python 3.9 required for .removesuffix - alternative provided in lines 47 - 49
             # target_path = subfolders[i] + "/" + gz_file[0].removesuffix('.gz')
             target_path = subfolders[i] + "/" + gz_file[0]
+
             """
             - Unzip was creating errors with Nibabel, use compressed nifti files instead
             if target_path.endswith('.gz'):
                 target_path = target_path[:-3]
             unzip(gz_filepath, target_path)
             """
+
+            # if target_path.endswith('.gz'):
+            #     target_path = target_path[:-3]
+ 
             move(gz_filepath, target_path)
     return
 
+    # helper unzip function –– created issues with file conversion (no unzipping needed)
+    # def unzip(source_filepath, dest_filepath):
+    #    block_size = 65536
+    #    f = open(source_filepath, 'rb')
+    #    if f.read(2) == '\x1f\x8b':
+    #        f.seek(0)
+    #        with gzip.open(source_filepath, 'rb') as s_file, \
+    #                open(dest_filepath, 'wb') as d_file:
+    #            shutil.copyfileobj(s_file, d_file, block_size)
+    #    else:
+    #        f.seek(0)
+    #        with open(source_filepath, 'rb') as s_file, \
+    #                open(dest_filepath, 'wb') as d_file:
+    #            shutil.copyfileobj(s_file, d_file, block_size)
+    #    f.close()
 
-# helper unzip function
-def unzip(source_filepath, dest_filepath):
-    block_size = 65536
-    f = open(source_filepath, 'rb')
-    if f.read(2) == '\x1f\x8b':
-        f.seek(0)
-        with gzip.open(source_filepath, 'rb') as s_file, \
-                open(dest_filepath, 'wb') as d_file:
-            shutil.copyfileobj(s_file, d_file, block_size)
-    else:
-        f.seek(0)
-        with open(source_filepath, 'rb') as s_file, \
-                open(dest_filepath, 'wb') as d_file:
-            shutil.copyfileobj(s_file, d_file, block_size)
-    f.close()
 
 
 # helper unzip function
