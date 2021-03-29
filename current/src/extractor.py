@@ -45,8 +45,8 @@ def extract_onii_chan(subfolders):
             # Python 3.9 required for .removesuffix - alternative provided in lines 47 - 49
             # target_path = subfolders[i] + "/" + gz_file[0].removesuffix('.gz')
             target_path = subfolders[i] + "/" + gz_file[0]
-            if target_path.endswith('.gz'):
-                target_path = target_path[:-3]
+            # if target_path.endswith('.gz'):
+            #     target_path = target_path[:-3]
             unzip(gz_filepath, target_path)
     return
 
