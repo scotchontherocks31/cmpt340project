@@ -82,10 +82,10 @@ def concat_png(t1w_png, t2w_png, swi_png):
     im2 = Image.open(t2w_png)
     im3 = Image.open(swi_png)
     # TODO: Check image mode (should it be RGB?)
-    output = Image.new('RGB', (im1.width + im2.width + im3.width, im1.height))
+    output = Image.new('RGB', (im1.width, im1.height + im2.height + im3.height))
     output.paste(im1, (0, 0))
-    output.paste(im2, (im1.width, 0))
-    output.paste(im3, (im1.width + im2.width, 0))
+    output.paste(im2, (0, im1.height))
+    output.paste(im3, (0, im1.height + im2.height))
     return output
 
 
