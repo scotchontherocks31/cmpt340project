@@ -3,6 +3,7 @@ preprocess.py
 Takes nifti type input and resamples it to output dimensions
 """
 import os
+from distutils.dir_util import copy_tree
 import shutil
 import subprocess
 import nibabel as nib
@@ -44,26 +45,30 @@ def resize(input_image, output_dim):
     :return output_name: string: path to resized 3D image in .nii
     """
     input_dim = get_MRI_dim(input_image)
-    output_name = input_image + '_resized.nii'
+    input_mri = nib.load(input_image)
+    output_name = input_image[:-7] + '_resized.nii'
     voxel_size = [input_dim[0] / output_dim[0], input_dim[1] / output_dim[1], input_dim[2] / output_dim[2]]
     # Downsample with interpolation
-    interp = resample_to_output(input_image, voxel_size)
+    interp = resample_to_output(input_mri, voxel_size)
     interp = conform(interp, output_dim, voxel_size)
+    print(input_image, " interp dimen:", interp.shape)
     # Save interpolated image
     nib.save(interp, output_name)
     return output_name
 
 
-def slice_nifti(nifti_image, patient_num):
+def slice_nifti(nifti_image, image_type, patient_num):
     """
     Slices a NIFTI image into horizontal slices in .png images
     :param nifti_image: string: path to 3D image in .nii format
+    :param image_type: string: Name of image type being sliced. Used to name directory
     :param patient_num: string: patient number
     :return: string: Path to folder of saved slices
     """
-    save_to = '../data/nii2png/' + patient_num + nifti_image
+    save_to = '../data/nii2png/' + patient_num + '_' + image_type + '/'
     subprocess.run(["python3", "nii2png.py", "-i", nifti_image, "-o", save_to],
                    input=b'n')
+    print(save_to)
     return save_to
 
 
@@ -77,7 +82,7 @@ def concat_png(t1w_png, t2w_png, swi_png):
     im2 = Image.open(t2w_png)
     im3 = Image.open(swi_png)
     # TODO: Check image mode (should it be RGB?)
-    output = Image.new('RGB', im1.width + im2.width + im3.width, im1.height)
+    output = Image.new('RGB', (im1.width + im2.width + im3.width, im1.height))
     output.paste(im1, (0, 0))
     output.paste(im2, (im1.width, 0))
     output.paste(im3, (im1.width + im2.width, 0))
@@ -85,29 +90,43 @@ def concat_png(t1w_png, t2w_png, swi_png):
 
 
 # Concatenate all png images in a directory
-def concat_patient_imgs(t1w_slices, t2w_slices, flair_slices, swi_slices, patient_num):
+def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice_dir, patient_num):
     """
     Calls concat_png on all slices for a given patient, and moves the resulting files into proper folder structure for
     use in In2I
 
-    :param t1w_slices: string: path to directory of t1w slice png images
-    :param t2w_slices: string: path to directory of t2w slice png images
-    :param flair_slices: string: path to directory of flair slice png images
-    :param swi_slices: string: path to directory of swi slice png images
+    :param t1w_slice_dir: string: path to directory of t1w slice png images
+    :param t2w_slice_dir: string: path to directory of t2w slice png images
+    :param flair_slice_dir: string: path to directory of flair slice png images
+    :param swi_slice_dir: string: path to directory of swi slice png images
     :param patient_num: string: patient number
     """
+    t1w_slices = os.listdir(t1w_slice_dir)
+    t2w_slices = os.listdir(t2w_slice_dir)
+    flair_slices = os.listdir(flair_slice_dir)
+    swi_slices = os.listdir(swi_slice_dir)
+
     if len(t1w_slices) == len(t2w_slices) and len(t1w_slices) == len(flair_slices) \
             and len(t1w_slices) == len(swi_slices):
+        os.makedirs('../data/processed/patient' + patient_num + '/trainA')
+        os.makedirs('../data/processed/patient' + patient_num + '/trainB')
         for i in range(len(t1w_slices)):
             # Concatenate t1w + t2w + flair
-            concat_img = concat_png(t1w_slices[i], t2w_slices[i], flair_slices[i])
-            concat_dest = 'data/processed/patient' + patient_num + '/trainA/concat_t1_t2_flair' + str(i) + '.png'
+            concat_img = concat_png(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i],
+                                    flair_slice_dir + flair_slices[i])
+
+            concat_dest = '../data/processed/patient' + patient_num + '/trainA/concat_t1_t2_flair' + str(i) + '.png'
             concat_img.save(concat_dest)
-            # Move swi into the the solution (trainB) folder
-            swi_dest = 'data/processed/patient' + patient_num + '/trainB/' + swi_slices[i]
-            shutil.move(swi_slices[i], swi_dest)
+
+        # Move SWI into the trainB folder
+        swi_dest = '../data/processed/patient' + patient_num + '/trainB/'
+        from_directory = swi_slice_dir
+        to_directory = swi_dest
+        copy_tree(from_directory, to_directory)
     else:
         print("Error: directories do not contain equal number of slices!")
+        print("t1 slice len = ", len(t1w_slices), "t2 slice len = ", len(t2w_slices), "flair slice len = ",
+              len(flair_slices), "swi slice len = ", len(swi_slices), )
         return
 
 
@@ -133,18 +152,19 @@ def preprocess_dir(directory):
     t1w_resized = resize(directory + '/' + t1w, target_dim)
     t2w_resized = resize(directory + '/' + t2w, target_dim)
     swi_resized = resize(directory + '/' + swi, target_dim)
+    flair_unzipped = resize(directory + '/' + flair, target_dim)
 
     # Get patient number from directory
     patient_num = directory[-14:]
 
     # slice each MRI image into 2d png images along the horizontal plane
-    t1w_sl_dir = slice_nifti(t1w_resized, patient_num)
-    t2w_sl_dir = slice_nifti(t2w_resized, patient_num)
-    swi_sl_dir = slice_nifti(swi_resized, patient_num)
-    flair_sl_dir = slice_nifti(flair, patient_num)
+    t1w_sl_dir = slice_nifti(t1w_resized, 'T1w', patient_num)
+    t2w_sl_dir = slice_nifti(t2w_resized, 'T2w', patient_num)
+    swi_sl_dir = slice_nifti(swi_resized, 'swi', patient_num)
+    flair_sl_dir = slice_nifti(flair_unzipped, 'FLAIR', patient_num)
 
     # Concatenate t1w + t2w + swi horizontally to prepare data for in2i model
-    concat_patient_imgs(t1w_sl_dir, t2w_sl_dir, flair_sl_dir, swi_sl_dir)
+    concat_patient_imgs(t1w_sl_dir, t2w_sl_dir, flair_sl_dir, swi_sl_dir, patient_num)
 
 
 # Preprocess full /mri directory
@@ -152,6 +172,9 @@ def main():
     all_patients = os.listdir('../../current/data/mri/')
     for patient_dir in all_patients:
         preprocess_dir('../../current/data/mri/' + patient_dir)
+
+    # Use to preprocess single patient
+    # preprocess_dir('../data/mri/OAS30003_MR_d1631')
 
 
 if __name__ == "__main__":
