@@ -33,6 +33,14 @@ def extract_required_paths(subfolders):
                 break
     return nifti_paths
 
+def move(source_filepath, dest_filepath):
+    block_size = 65536
+    f = open(source_filepath, 'rb')
+    f.seek(0)
+    with open(source_filepath, 'rb') as s_file, \
+        open(dest_filepath, 'wb') as d_file:
+        shutil.copyfileobj(s_file, d_file, block_size)
+    f.close()
 
 # extract onii-sama from .gz into subdir properly UwU
 def extract_onii_chan(subfolders):
@@ -50,31 +58,22 @@ def extract_onii_chan(subfolders):
             move(gz_filepath, target_path)
     return
 
+    # helper unzip function –– created issues with file conversion (no unzipping needed)
+    # def unzip(source_filepath, dest_filepath):
+    #    block_size = 65536
+    #    f = open(source_filepath, 'rb')
+    #    if f.read(2) == '\x1f\x8b':
+    #        f.seek(0)
+    #        with gzip.open(source_filepath, 'rb') as s_file, \
+    #                open(dest_filepath, 'wb') as d_file:
+    #            shutil.copyfileobj(s_file, d_file, block_size)
+    #    else:
+    #        f.seek(0)
+    #        with open(source_filepath, 'rb') as s_file, \
+    #                open(dest_filepath, 'wb') as d_file:
+    #            shutil.copyfileobj(s_file, d_file, block_size)
+    #    f.close()
 
-# helper unzip function
-#def unzip(source_filepath, dest_filepath):
-#    block_size = 65536
-#    f = open(source_filepath, 'rb')
-#    if f.read(2) == '\x1f\x8b':
-#        f.seek(0)
-#        with gzip.open(source_filepath, 'rb') as s_file, \
-#                open(dest_filepath, 'wb') as d_file:
-#            shutil.copyfileobj(s_file, d_file, block_size)
-#    else:
-#        f.seek(0)
-#        with open(source_filepath, 'rb') as s_file, \
-#                open(dest_filepath, 'wb') as d_file:
-#            shutil.copyfileobj(s_file, d_file, block_size)
-#    f.close()
-    
-    def move(source_filepath, dest_filepath):
-    block_size = 65536
-    f = open(source_filepath, 'rb')
-    f.seek(0)
-    with open(source_filepath, 'rb') as s_file, \
-            open(dest_filepath, 'wb') as d_file:
-        shutil.copyfileobj(s_file, d_file, block_size)
-    f.close()
 
 
 def main():
