@@ -19,7 +19,7 @@ def import_images(directory):
     :return: list of string: returns the paths of the desired NIFTI image types
     """
     full_list = os.listdir(directory)
-    exclude_substrings = ['anat', 'acq-TSE', 'run-02', 'swi4', 'DS_Store']
+    exclude_substrings = ['anat', 'acq-TSE', 'run-02', 'swi4', 'swi2', 'DS_Store']
     final_list = [f for f in full_list if not [ss for ss in exclude_substrings if ss in f]]
     return final_list
 
