@@ -4,6 +4,7 @@ Takes nifti type input and resamples it to output dimensions
 """
 import os
 from distutils.dir_util import copy_tree
+from tqdm import tqdm
 import shutil
 import subprocess
 import nibabel as nib
@@ -51,7 +52,6 @@ def resize(input_image, output_dim):
     # Downsample with interpolation
     interp = resample_to_output(input_mri, voxel_size)
     interp = conform(interp, output_dim, voxel_size)
-    print(input_image, " interp dimen:", interp.shape)
     # Save interpolated image
     nib.save(interp, output_name)
     return output_name
@@ -67,8 +67,7 @@ def slice_nifti(nifti_image, image_type, patient_num):
     """
     save_to = '../data/nii2png/' + patient_num + '_' + image_type + '/'
     subprocess.run(["python3", "nii2png.py", "-i", nifti_image, "-o", save_to],
-                   input=b'n')
-    print(save_to)
+                   input=b'n', stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     return save_to
 
 
@@ -101,10 +100,11 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
     :param swi_slice_dir: string: path to directory of swi slice png images
     :param patient_num: string: patient number
     """
-    t1w_slices = os.listdir(t1w_slice_dir)
-    t2w_slices = os.listdir(t2w_slice_dir)
-    flair_slices = os.listdir(flair_slice_dir)
-    swi_slices = os.listdir(swi_slice_dir)
+    t1w_slices = sorted(os.listdir(t1w_slice_dir))
+    t2w_slices = sorted(os.listdir(t2w_slice_dir))
+    flair_slices = sorted(os.listdir(flair_slice_dir))
+    swi_slices = sorted(os.listdir(swi_slice_dir))
+
 
     if len(t1w_slices) == len(t2w_slices) and len(t1w_slices) == len(flair_slices) \
             and len(t1w_slices) == len(swi_slices):
@@ -152,7 +152,11 @@ def preprocess_dir(directory):
     t1w_resized = resize(directory + '/' + t1w, target_dim)
     t2w_resized = resize(directory + '/' + t2w, target_dim)
     swi_resized = resize(directory + '/' + swi, target_dim)
-    flair_unzipped = resize(directory + '/' + flair, target_dim)
+
+    # Unzip flair
+    flair_load = nib.load(directory + '/' + flair)
+    flair_unzipped = flair[:-7] + '_unzipped.nii'
+    nib.save(directory + '/' + flair_load, flair_unzipped)
 
     # Get patient number from directory
     patient_num = directory[-14:]
@@ -169,10 +173,18 @@ def preprocess_dir(directory):
 
 # Preprocess full /mri directory
 def main():
+    failed_directories = []
     all_patients = os.listdir('../../current/data/mri/')
-    for patient_dir in all_patients:
-        preprocess_dir('../../current/data/mri/' + patient_dir)
-
+    for patient_dir in tqdm(all_patients):
+        print("Processing: ", patient_dir)
+        try:
+            preprocess_dir('../../current/data/mri/' + patient_dir)
+        except Exception:
+            failed_directories.append([patient_dir])
+            pass
+    print("These directories raised exceptions: ")
+    for f in failed_directories:
+        print(f[0])
     # Use to preprocess single patient
     # preprocess_dir('../data/mri/OAS30003_MR_d1631')
 

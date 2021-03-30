@@ -42,6 +42,7 @@ def move(source_filepath, dest_filepath):
         shutil.copyfileobj(s_file, d_file, block_size)
     f.close()
 
+
 # extract onii-sama from .gz into subdir properly UwU
 def extract_onii_chan(subfolders):
     print('Extracting nii-sama')
@@ -82,7 +83,6 @@ def extract_onii_chan(subfolders):
     #                open(dest_filepath, 'wb') as d_file:
     #            shutil.copyfileobj(s_file, d_file, block_size)
     #    f.close()
-
 
 
 # helper unzip function
