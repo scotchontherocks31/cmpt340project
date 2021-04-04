@@ -120,9 +120,7 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
 
         # Move SWI into the trainB folder
         swi_dest = '../data/processed/patient' + patient_num + '/trainB/'
-        from_directory = swi_slice_dir
-        to_directory = swi_dest
-        copy_tree(from_directory, to_directory)
+        copy_tree(swi_slice_dir, swi_dest)
     else:
         print("Error: directories do not contain equal number of slices!")
         print("t1 slice len = ", len(t1w_slices), "t2 slice len = ", len(t2w_slices), "flair slice len = ",
@@ -156,7 +154,7 @@ def preprocess_dir(directory):
     # Unzip flair
     flair_load = nib.load(directory + '/' + flair)
     flair_unzipped = flair[:-7] + '_unzipped.nii'
-    nib.save(directory + '/' + flair_load, flair_unzipped)
+    nib.save(flair_load, directory + '/' + flair_unzipped)
 
     # Get patient number from directory
     patient_num = directory[-14:]
@@ -165,7 +163,7 @@ def preprocess_dir(directory):
     t1w_sl_dir = slice_nifti(t1w_resized, 'T1w', patient_num)
     t2w_sl_dir = slice_nifti(t2w_resized, 'T2w', patient_num)
     swi_sl_dir = slice_nifti(swi_resized, 'swi', patient_num)
-    flair_sl_dir = slice_nifti(flair_unzipped, 'FLAIR', patient_num)
+    flair_sl_dir = slice_nifti(directory + '/' + flair_unzipped, 'FLAIR', patient_num)
 
     # Concatenate t1w + t2w + swi horizontally to prepare data for in2i model
     concat_patient_imgs(t1w_sl_dir, t2w_sl_dir, flair_sl_dir, swi_sl_dir, patient_num)
@@ -185,6 +183,7 @@ def main():
     print("These directories raised exceptions: ")
     for f in failed_directories:
         print(f[0])
+
     # Use to preprocess single patient
     # preprocess_dir('../data/mri/OAS30003_MR_d1631')
 
