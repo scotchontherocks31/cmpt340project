@@ -8,7 +8,9 @@ from tqdm import tqdm
 import shutil
 import subprocess
 import nibabel as nib
+import numpy as np
 from nibabel.processing import resample_to_output, conform
+from pathlib import Path
 from PIL import Image
 
 
@@ -57,6 +59,37 @@ def resize(input_image, output_dim):
     return output_name
 
 
+def crop(input_image, cropped_name='cropped.nii', tol=150, nose_reserve=8, ear_reserve=6):
+    """
+    Crops off the border of a 3D nifti image, where the border consists of pixels whose values are lower than a given tolerance level
+    :param input_image: string: path to 3D image in .nii format which will be cropped
+    :param cropped_name: path to 3D image in .nii format which was cropped
+    :param tol: Int: pixel value tolerance level
+    :param nose_reserve: Int: amount of pixels to reserve for nose
+    :param ear_reserve: Int: amount of pixels to reserve for ears
+    :return cropped_name: path to 3D image in .nii format which was cropped
+    """
+    nim = nib.load(input_image)
+    img = nim.get_data()
+    if cropped_name == 'cropped.nii':
+        cropped_name = input_image[:-4] + '_cropped.nii'
+
+    idx = np.nonzero(img > tol)
+    x1 = max(0, idx[0].min() - ear_reserve)                 #right-ear
+    y1 = max(0, idx[1].min())                               #back-neck
+    z1 = max(0, idx[2].min())                               #top of head
+    x2 = min(img.shape[0], idx[0].max() + 1 + ear_reserve)  #left-ear
+    y2 = min(img.shape[1], idx[1].max() + 1 + nose_reserve) #front-face
+    z2 = min(img.shape[2], idx[2].max() + 1)                #bottom-jaw
+    img = img[x1:x2, y1:y2, z1:z2]
+    
+    affine = nim.affine
+    affine[:3, 3] = np.dot(affine, np.array([x1, y1, z1, 1]))[:3]
+    cropped = nib.Nifti1Image(img, affine)
+    nib.save(cropped, cropped_name)
+    return cropped_name
+
+
 def slice_nifti(nifti_image, image_type, patient_num):
     """
     Slices a NIFTI image into horizontal slices in .png images
@@ -93,7 +126,6 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
     """
     Calls concat_png on all slices for a given patient, and moves the resulting files into proper folder structure for
     use in In2I
-
     :param t1w_slice_dir: string: path to directory of t1w slice png images
     :param t2w_slice_dir: string: path to directory of t2w slice png images
     :param flair_slice_dir: string: path to directory of flair slice png images
@@ -145,11 +177,27 @@ def preprocess_dir(directory):
     # Get output dimensions from flair image
     target_dim = get_MRI_dim(directory + '/' + flair)
 
+   # Cropping images (comment this out if not using crop)
+    t1w_cropped = crop(directory + '/' + t1w)
+    t2w_cropped = crop(directory + '/' + t2w)
+    swi_cropped = crop(directory + '/' + swi)
+
+
+
     # Resize t1w, t2w, and swi to have the same dimensions as flair image
     # Variables are assigned the paths to the new images
-    t1w_resized = resize(directory + '/' + t1w, target_dim)
-    t2w_resized = resize(directory + '/' + t2w, target_dim)
-    swi_resized = resize(directory + '/' + swi, target_dim)
+
+    #Comment out these if using crop
+    # t1w_resized = resize(directory + '/' + t1w, target_dim)
+    # t2w_resized = resize(directory + '/' + t2w, target_dim)
+    # swi_resized = resize(directory + '/' + swi, target_dim)
+
+    #Comment out these below if not using crop
+    t1w_resized = resize(t1w_cropped, target_dim)
+    t2w_resized = resize(t2w_cropped, target_dim)
+    swi_resized = resize(swi_cropped, target_dim)
+
+
 
     # Unzip flair
     flair_load = nib.load(directory + '/' + flair)
@@ -159,6 +207,8 @@ def preprocess_dir(directory):
     # Get patient number from directory
     patient_num = directory[-14:]
 
+
+    
     # slice each MRI image into 2d png images along the horizontal plane
     t1w_sl_dir = slice_nifti(t1w_resized, 'T1w', patient_num)
     t2w_sl_dir = slice_nifti(t2w_resized, 'T2w', patient_num)
@@ -177,7 +227,8 @@ def main():
         print("Processing: ", patient_dir)
         try:
             preprocess_dir('../../current/data/mri/' + patient_dir)
-        except Exception:
+        except Exception as e:
+            print(e)
             failed_directories.append([patient_dir])
             pass
     print("These directories raised exceptions: ")
