@@ -1,1 +1,6 @@
 .vscode
+.DS_Store
+current/data/mri
+current/data/processed
+current/data/nii2png
+.idea
