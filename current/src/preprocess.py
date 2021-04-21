@@ -7,8 +7,12 @@ from distutils.dir_util import copy_tree
 from tqdm import tqdm
 import shutil
 import subprocess
+import math
+import numpy as np
+import numpy.linalg as npl
 import nibabel as nib
-from nibabel.processing import resample_to_output, conform
+from nibabel.processing import resample_from_to, resample_to_output, conform
+from nibabel.affines import apply_affine
 from PIL import Image
 
 
@@ -34,27 +38,6 @@ def get_MRI_dim(MRI_nifti):
     """
     mri = nib.load(MRI_nifti)
     return mri.shape
-
-
-def resize(input_image, output_dim):
-    """
-    Applies downsampling and interpolation to a NIFTI file, reducing it's spatial resolution
-    to match specified dimensions
-    :param input_image: string: path to 3D image in .nii format which will be resized
-    :param output_dim: tuple: takes a triple of int values, in the form (x, y, z),
-    which input_image will be resized match
-    :return output_name: string: path to resized 3D image in .nii
-    """
-    input_dim = get_MRI_dim(input_image)
-    input_mri = nib.load(input_image)
-    output_name = input_image[:-7] + '_resized.nii'
-    voxel_size = [input_dim[0] / output_dim[0], input_dim[1] / output_dim[1], input_dim[2] / output_dim[2]]
-    # Downsample with interpolation
-    interp = resample_to_output(input_mri, voxel_size)
-    interp = conform(interp, output_dim, voxel_size)
-    # Save interpolated image
-    nib.save(interp, output_name)
-    return output_name
 
 
 def slice_nifti(nifti_image, image_type, patient_num):
@@ -105,16 +88,15 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
     flair_slices = sorted(os.listdir(flair_slice_dir))
     swi_slices = sorted(os.listdir(swi_slice_dir))
 
-
     if len(t1w_slices) == len(t2w_slices) and len(t1w_slices) == len(flair_slices) \
             and len(t1w_slices) == len(swi_slices):
         os.makedirs('../data/processed/patient' + patient_num + '/trainA')
         os.makedirs('../data/processed/patient' + patient_num + '/trainB')
         for i in range(len(t1w_slices)):
             # Concatenate t1w + t2w + flair
+            # TODO Only concat sets of images if none are black
             concat_img = concat_png(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i],
                                     flair_slice_dir + flair_slices[i])
-
             concat_dest = '../data/processed/patient' + patient_num + '/trainA/concat_t1_t2_flair' + str(i) + '.png'
             concat_img.save(concat_dest)
 
@@ -126,6 +108,61 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
         print("t1 slice len = ", len(t1w_slices), "t2 slice len = ", len(t2w_slices), "flair slice len = ",
               len(flair_slices), "swi slice len = ", len(swi_slices), )
         return
+
+
+def flairVox_to_mriVox(mri_img, flair_img):
+    return npl.inv(mri_img.affine).dot(flair_img.affine)
+
+
+def match_z_len_mri2FLAIR(mri, flair, img_type=None):
+    mri_img = nib.load(mri)
+    flair_img = nib.load(flair)
+
+    flair_dim = get_MRI_dim(flair)
+
+    flair_vox_center = (np.array(flair_img.shape) - 1) / 2.
+    flair_vox_center_low = np.copy(flair_vox_center)
+    flair_vox_center_low[2] = 0
+    flair_vox_center_high = np.copy(flair_vox_center)
+    flair_vox_center_high[2] = int(flair_dim[2]-1)
+
+    flair_real_low = apply_affine(flair_img.affine, flair_vox_center_low)
+    flair_real_high = apply_affine(flair_img.affine, flair_vox_center_high)
+
+    mri_vox_at_flair_low = apply_affine(flairVox_to_mriVox(mri_img, flair_img), flair_vox_center_low)
+    # print("Cropping to mri voxel at same real world position as flair low: ", mri_vox_at_flair_low)
+    mri_vox_at_flair_high = apply_affine(flairVox_to_mriVox(mri_img, flair_img), flair_vox_center_high)
+    # print("Cropping to mri voxel at same real world position as flair high", mri_vox_at_flair_high)
+
+    # Crop the image
+    # print("orig dimensions: ", mri_img.shape)
+    if img_type == "t1":
+        mri_img_cropped = mri_img.slicer[:, :, round(mri_vox_at_flair_low[2]):round(mri_vox_at_flair_high[2]):6]
+    else:
+        mri_img_cropped = mri_img.slicer[:, :, round(mri_vox_at_flair_low[2]):round(mri_vox_at_flair_high[2]):3]
+    mri_img_cropped = conform(mri_img_cropped, flair_img.shape, [0.82, 0.82, 6])
+    # print("cropped dimensions: ", mri_img_cropped.shape)
+
+    output_name = mri[:-7] + '_resized.nii'
+    nib.save(mri_img_cropped, output_name)
+    return output_name
+
+
+def test_equal_vox(img1_path, img2_path):
+    img1 = nib.load(img1_path)
+    img2 = nib.load(img2_path)
+
+    img2_vox_center = (np.array(img2.shape) - 1) / 2.
+    img2_x = img2_vox_center[0]
+    img2_y = img2_vox_center[1]
+
+    img1_vox_at_img2_centre = apply_affine(flairVox_to_mriVox(img1, img2), img2_vox_center)
+    img1_x = img1_vox_at_img2_centre[0]
+    img1_y = img1_vox_at_img2_centre[1]
+
+    for z in range(24):
+        print(z, ": ", apply_affine(img1.affine, [img1_x, img1_y, z]), "==",
+              apply_affine(img2.affine, [img2_x, img2_y, z]))
 
 
 def preprocess_dir(directory):
@@ -142,19 +179,28 @@ def preprocess_dir(directory):
     flair = list(filter(lambda x: 'FLAIR' in x, images))[0]
     swi = list(filter(lambda x: 'swi' in x, images))[0]
 
-    # Get output dimensions from flair image
-    target_dim = get_MRI_dim(directory + '/' + flair)
-
-    # Resize t1w, t2w, and swi to have the same dimensions as flair image
-    # Variables are assigned the paths to the new images
-    t1w_resized = resize(directory + '/' + t1w, target_dim)
-    t2w_resized = resize(directory + '/' + t2w, target_dim)
-    swi_resized = resize(directory + '/' + swi, target_dim)
-
     # Unzip flair
     flair_load = nib.load(directory + '/' + flair)
     flair_unzipped = flair[:-7] + '_unzipped.nii'
     nib.save(flair_load, directory + '/' + flair_unzipped)
+
+    # match_z_len: Crop t1w, t2w, and swi Z dimension to match Flair
+    # Resize t1w, t2w, and swi to have the same dimensions as flair image
+    # Variables are assigned the paths to the new images
+    # print("Cropping t1w..")
+    t1w_resized = match_z_len_mri2FLAIR(directory + '/' + t1w, directory + '/' + flair, "t1")
+    # test_equal_vox(t1w_resized, directory + '/' + flair)
+    # print("new t1w size = ", get_MRI_dim(directory + '/' + t1w), "\n")
+
+    # print("Cropping t2w..")
+    t2w_resized = match_z_len_mri2FLAIR(directory + '/' + t2w, directory + '/' + flair, "t1")
+    # test_equal_vox(t2w_resized, directory + '/' + flair)
+    # print("new t2w size = ", get_MRI_dim(directory + '/' + t2w), "\n")
+
+    # print("Cropping swi")
+    swi_resized = match_z_len_mri2FLAIR(directory + '/' + swi, directory + '/' + flair)
+    # test_equal_vox(swi_resized, directory + '/' + flair)
+    # print("new swi size = ", get_MRI_dim(directory + '/' + swi), "\n")
 
     # Get patient number from directory
     patient_num = directory[-14:]
@@ -171,6 +217,7 @@ def preprocess_dir(directory):
 
 # Preprocess full /mri directory
 def main():
+    """
     failed_directories = []
     all_patients = os.listdir('../../current/data/mri/')
     for patient_dir in tqdm(all_patients):
@@ -183,10 +230,45 @@ def main():
     print("These directories raised exceptions: ")
     for f in failed_directories:
         print(f[0])
-
+    """
     # Use to preprocess single patient
-    # preprocess_dir('../data/mri/OAS30003_MR_d1631')
+    preprocess_dir('../data/mri/OAS30003_MR_d1631')
+
+
+def preprocess_main_test():
+    test_dir = '../data/mri/unit_test'
+    patients_to_test = ['../data/mri/OAS30004_MR_d2229',
+                        '../data/mri/OAS30005_MR_d1274',
+                        '../data/mri/OAS30009_MR_d1210']
+    os.mkdir(test_dir)
+    for patient in patients_to_test:
+        patient_num = patient[-14:]
+        copy_tree(patient, test_dir + '/' + patient_num)
+
+    # Call main function on test subset
+    failed_directories = []
+    all_patients = os.listdir(test_dir)
+    for patient_dir in tqdm(all_patients):
+        print("Processing: ", patient_dir)
+        try:
+            preprocess_dir(test_dir + '/' + patient_dir)
+        except Exception:
+            failed_directories.append([patient_dir])
+            pass
+    print("These directories raised exceptions: ")
+    for f in failed_directories:
+        print(f[0])
+
+    input("Press any key to complete test, and destroy created directories. \n"
+          "Warning - this will delete directories made by prior runs on preprocess (nii2png, processed)")
+
+    shutil.rmtree('../data/mri/unit_test')
+    shutil.rmtree('../data/nii2png')
+    shutil.rmtree('../data/processed')
+
+    print("testing complete")
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    preprocess_main_test()
