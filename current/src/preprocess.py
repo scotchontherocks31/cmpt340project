@@ -101,7 +101,7 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
             concat_img = concat_png(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i],
                                     flair_slice_dir + flair_slices[i])
             concat_dest = '../data/processed/trainA/' + patient_num + \
-                          '_concat_t1_t2_flair' + str(i-1) + '.png'
+                          '_concat_t1_t2_flair_' + str(i-1) + '.png'
             concat_img.save(concat_dest)
 
             # Rename swi images to match convention
