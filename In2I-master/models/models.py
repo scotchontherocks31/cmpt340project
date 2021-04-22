@@ -16,6 +16,7 @@ def create_model(opt):
         model = TestModel()
     else:
         raise ValueError("Model [%s] not recognized." % opt.model)
+    #op.gpu_id =
     model.initialize(opt)
     print("model [%s] was created" % (model.name()))
     return model

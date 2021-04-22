@@ -3,7 +3,7 @@ batchSize: 1
 beta1: 0.5
 checkpoints_dir: ./checkpoints
 continue_train: False
-dataroot: ./dataset
+dataroot: ./dataset/
 dataset_mode: unaligned
 display_freq: 100
 display_id: 1
@@ -12,7 +12,7 @@ display_single_pane_ncols: 0
 display_winsize: 256
 epoch_count: 1
 fineSize: 256
-gpu_ids: [0]
+gpu_ids: []
 identity: 0.0
 init_type: xavier
 input_nc: 1
