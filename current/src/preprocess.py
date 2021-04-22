@@ -15,6 +15,7 @@ from nibabel.processing import resample_from_to, resample_to_output, conform
 from nibabel.affines import apply_affine
 from PIL import Image
 
+TESTING = True
 
 # Import images tool
 def import_images(directory):
@@ -54,7 +55,7 @@ def slice_nifti(nifti_image, image_type, patient_num):
     return save_to
 
 
-def concat_png(t1w_png, t2w_png, swi_png):
+def concat_png(t1w_png, t2w_png, flair_png):
     """
     Concatenates png images horizontally into a single image to match required input for In2I
     :param t1w_png, t2w_png, swi_png: string: path to png images to concatenate
@@ -62,12 +63,12 @@ def concat_png(t1w_png, t2w_png, swi_png):
     """
     im1 = Image.open(t1w_png)
     im2 = Image.open(t2w_png)
-    im3 = Image.open(swi_png)
+    im3 = Image.open(flair_png)
     # TODO: Check image mode (should it be RGB?)
-    output = Image.new('RGB', (im1.width, im1.height + im2.height + im3.height))
+    output = Image.new('RGB', (im1.width + im2.width + im3.width, im1.height))
     output.paste(im1, (0, 0))
-    output.paste(im2, (0, im1.height))
-    output.paste(im3, (0, im1.height + im2.height))
+    output.paste(im2, (im1.width, 0))
+    output.paste(im3, (im1.width + im2.width, 0))
     return output
 
 
@@ -90,18 +91,17 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
 
     if len(t1w_slices) == len(t2w_slices) and len(t1w_slices) == len(flair_slices) \
             and len(t1w_slices) == len(swi_slices):
-        os.makedirs('../data/processed/patient' + patient_num + '/trainA')
-        os.makedirs('../data/processed/patient' + patient_num + '/trainB')
         for i in range(len(t1w_slices)):
             # Concatenate t1w + t2w + flair
             # TODO Only concat sets of images if none are black
             concat_img = concat_png(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i],
                                     flair_slice_dir + flair_slices[i])
-            concat_dest = '../data/processed/patient' + patient_num + '/trainA/concat_t1_t2_flair' + str(i) + '.png'
+            concat_dest = '../data/processed/trainA/' + patient_num + \
+                          '_concat_t1_t2_flair' + str(i) + '.png'
             concat_img.save(concat_dest)
 
         # Move SWI into the trainB folder
-        swi_dest = '../data/processed/patient' + patient_num + '/trainB/'
+        swi_dest = '../data/processed/trainB/'
         copy_tree(swi_slice_dir, swi_dest)
     else:
         print("Error: directories do not contain equal number of slices!")
@@ -126,13 +126,8 @@ def match_z_len_mri2FLAIR(mri, flair, img_type=None):
     flair_vox_center_high = np.copy(flair_vox_center)
     flair_vox_center_high[2] = int(flair_dim[2]-1)
 
-    flair_real_low = apply_affine(flair_img.affine, flair_vox_center_low)
-    flair_real_high = apply_affine(flair_img.affine, flair_vox_center_high)
-
     mri_vox_at_flair_low = apply_affine(flairVox_to_mriVox(mri_img, flair_img), flair_vox_center_low)
-    # print("Cropping to mri voxel at same real world position as flair low: ", mri_vox_at_flair_low)
     mri_vox_at_flair_high = apply_affine(flairVox_to_mriVox(mri_img, flair_img), flair_vox_center_high)
-    # print("Cropping to mri voxel at same real world position as flair high", mri_vox_at_flair_high)
 
     # Crop the image
     # print("orig dimensions: ", mri_img.shape)
@@ -149,17 +144,21 @@ def match_z_len_mri2FLAIR(mri, flair, img_type=None):
 
 
 def test_equal_vox(img1_path, img2_path):
+    # Load images
     img1 = nib.load(img1_path)
     img2 = nib.load(img2_path)
 
+    # Get coordinates for the center voxel of img2
     img2_vox_center = (np.array(img2.shape) - 1) / 2.
     img2_x = img2_vox_center[0]
     img2_y = img2_vox_center[1]
 
+    # Find the voxel in img1 which matches the real world coordinates of the center of img 2
     img1_vox_at_img2_centre = apply_affine(flairVox_to_mriVox(img1, img2), img2_vox_center)
     img1_x = img1_vox_at_img2_centre[0]
     img1_y = img1_vox_at_img2_centre[1]
 
+    # Check each slice for equality
     for z in range(24):
         print(z, ": ", apply_affine(img1.affine, [img1_x, img1_y, z]), "==",
               apply_affine(img2.affine, [img2_x, img2_y, z]))
@@ -184,23 +183,16 @@ def preprocess_dir(directory):
     flair_unzipped = flair[:-7] + '_unzipped.nii'
     nib.save(flair_load, directory + '/' + flair_unzipped)
 
-    # match_z_len: Crop t1w, t2w, and swi Z dimension to match Flair
-    # Resize t1w, t2w, and swi to have the same dimensions as flair image
+    # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
     # Variables are assigned the paths to the new images
-    # print("Cropping t1w..")
     t1w_resized = match_z_len_mri2FLAIR(directory + '/' + t1w, directory + '/' + flair, "t1")
     # test_equal_vox(t1w_resized, directory + '/' + flair)
-    # print("new t1w size = ", get_MRI_dim(directory + '/' + t1w), "\n")
 
-    # print("Cropping t2w..")
     t2w_resized = match_z_len_mri2FLAIR(directory + '/' + t2w, directory + '/' + flair, "t1")
     # test_equal_vox(t2w_resized, directory + '/' + flair)
-    # print("new t2w size = ", get_MRI_dim(directory + '/' + t2w), "\n")
 
-    # print("Cropping swi")
     swi_resized = match_z_len_mri2FLAIR(directory + '/' + swi, directory + '/' + flair)
     # test_equal_vox(swi_resized, directory + '/' + flair)
-    # print("new swi size = ", get_MRI_dim(directory + '/' + swi), "\n")
 
     # Get patient number from directory
     patient_num = directory[-14:]
@@ -211,15 +203,16 @@ def preprocess_dir(directory):
     swi_sl_dir = slice_nifti(swi_resized, 'swi', patient_num)
     flair_sl_dir = slice_nifti(directory + '/' + flair_unzipped, 'FLAIR', patient_num)
 
-    # Concatenate t1w + t2w + swi horizontally to prepare data for in2i model
+    # Concatenate t1w + t2w + FLAIR horizontally to prepare data for in2i model
     concat_patient_imgs(t1w_sl_dir, t2w_sl_dir, flair_sl_dir, swi_sl_dir, patient_num)
 
 
 # Preprocess full /mri directory
 def main():
-    """
     failed_directories = []
     all_patients = os.listdir('../../current/data/mri/')
+    os.makedirs('../data/processed/trainA')
+    os.makedirs('../data/processed/trainB')
     for patient_dir in tqdm(all_patients):
         print("Processing: ", patient_dir)
         try:
@@ -230,9 +223,9 @@ def main():
     print("These directories raised exceptions: ")
     for f in failed_directories:
         print(f[0])
-    """
+
     # Use to preprocess single patient
-    preprocess_dir('../data/mri/OAS30003_MR_d1631')
+    # preprocess_dir('../data/mri/OAS30003_MR_d1631')
 
 
 def preprocess_main_test():
@@ -241,6 +234,8 @@ def preprocess_main_test():
                         '../data/mri/OAS30005_MR_d1274',
                         '../data/mri/OAS30009_MR_d1210']
     os.mkdir(test_dir)
+    os.makedirs('../data/processed/trainA')
+    os.makedirs('../data/processed/trainB')
     for patient in patients_to_test:
         patient_num = patient[-14:]
         copy_tree(patient, test_dir + '/' + patient_num)
@@ -270,5 +265,8 @@ def preprocess_main_test():
 
 
 if __name__ == "__main__":
-    # main()
-    preprocess_main_test()
+    if TESTING is True:
+        preprocess_main_test()
+    else:
+        main()
+
