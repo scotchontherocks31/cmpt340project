@@ -14,11 +14,12 @@ import nibabel as nib
 from nibabel.processing import resample_from_to, resample_to_output, conform
 from nibabel.affines import apply_affine
 from PIL import Image
-from preprocess import import_images, get_MRI_dim, slice_nifti, flairVox_to_mriVox, match_z_len_mri2FLAIR, \
-    test_equal_vox
+from preprocess import import_images, get_MRI_dim, slice_nifti, flairVox_to_mriVox, match_mri_to_FLAIR, \
+    test_equal_vox, crop
 
 
 TESTING = True
+CROP = False
 
 
 def concat_png_2in1out(t1w_png, t2w_png):
@@ -55,13 +56,24 @@ def concat_patient_imgs_2in1out(t1w_slice_dir, t2w_slice_dir, swi_slice_dir, pat
     if len(t1w_slices) == len(t2w_slices) and len(t1w_slices) == len(swi_slices):
         for i in range(len(t1w_slices)):
             # Concatenate t1w + t2w
-            # TODO Only concat sets of images if none are black
+            # Remove first and last slice as they are often black
+            if i == 0 or i == len(t1w_slices) - 1:
+                continue
             concat_img = concat_png_2in1out(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i])
             concat_dest = '../data/processed/2in_1out/trainA/' + patient_num + \
                           '_concat_t1_t2' + str(i) + '.png'
+            concat_img.save(concat_dest)
+
+            # Rename swi images to match convention
+            dst = swi_slice_dir + patient_num + '_swi' + str(i-1) + '.png'
+            src = swi_slice_dir + swi_slices[i]
+            os.rename(src, dst)
 
         # Move SWI into the trainB folder
         swi_dest = '../data/processed/2in_1out/trainB/'
+        # Remove first and last slice
+        os.remove(swi_slice_dir + swi_slices[0])
+        os.remove(swi_slice_dir + swi_slices[len(swi_slices) - 1])
         copy_tree(swi_slice_dir, swi_dest)
     else:
         print("Error: directories do not contain equal number of slices!")
@@ -80,33 +92,55 @@ def preprocess_dir_2in1out(directory):
     # Get paths to each individual image
     t1w = list(filter(lambda x: 'T1w' in x, images))[0]
     t2w = list(filter(lambda x: 'T2w' in x, images))[0]
-    flair = list(filter(lambda x: 'FLAIR' in x, images))[0]
     swi = list(filter(lambda x: 'swi' in x, images))[0]
+    flair = list(filter(lambda x: 'FLAIR' in x, images))[0]
+
+    t1w_path = directory + '/' + t1w
+    t2w_path = directory + '/' + t2w
+    swi_path = directory + '/' + swi
+    flair_path = directory + '/' + flair
 
     # Unzip flair
-    flair_load = nib.load(directory + '/' + flair)
-    flair_unzipped = flair[:-7] + '_unzipped.nii'
-    nib.save(flair_load, directory + '/' + flair_unzipped)
+    flair_load = nib.load(flair_path)
+    flair_unzipped = '{0}/{1}_unzipped.nii'.format(directory, flair[:-7])
+    nib.save(flair_load, flair_unzipped)
 
-    # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
-    # Variables are assigned the paths to the new images
-    t1w_resized = match_z_len_mri2FLAIR(directory + '/' + t1w, directory + '/' + flair, "t1")
+    # Cropping images (comment this out if not using crop)
+    if CROP is True:
+        t1w_cropped = crop(t1w_path)
+        t2w_cropped = crop(t2w_path)
+        swi_cropped = crop(swi_path)
+        flair_cropped = crop(flair_unzipped)
+
+        # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
+        # Variables are assigned the paths to the new images
+        t1w_resized = match_mri_to_FLAIR(t1w_cropped, flair_cropped, "t1")
+        t2w_resized = match_mri_to_FLAIR(t2w_cropped, flair_cropped, "t1")
+        swi_resized = match_mri_to_FLAIR(swi_cropped, flair_cropped)
+
+    else:
+        # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
+        # Variables are assigned the paths to the new images
+        t1w_resized = match_mri_to_FLAIR(t1w_path, flair_unzipped, "t1")
+        t2w_resized = match_mri_to_FLAIR(t1w_path, flair_unzipped, "t1")
+        swi_resized = match_mri_to_FLAIR(t2w_path, flair_unzipped)
+
+    # Use to test if voxels are correctly lined up between FLAIR and other image types
+    # print("t1w : FLAIR voxel comparison in real space")
     # test_equal_vox(t1w_resized, directory + '/' + flair)
-
-    t2w_resized = match_z_len_mri2FLAIR(directory + '/' + t2w, directory + '/' + flair, "t1")
+    # print("t2w : FLAIR voxel comparison in real space")
     # test_equal_vox(t2w_resized, directory + '/' + flair)
-
-    swi_resized = match_z_len_mri2FLAIR(directory + '/' + swi, directory + '/' + flair)
+    # print("swi : FLAIR voxel comparison in real space")
     # test_equal_vox(swi_resized, directory + '/' + flair)
-
     # Get patient number from directory
+
     patient_num = directory[-14:]
 
     # slice each MRI image into 2d png images along the horizontal plane
     t1w_sl_dir = slice_nifti(t1w_resized, 'T1w', patient_num)
     t2w_sl_dir = slice_nifti(t2w_resized, 'T2w', patient_num)
     swi_sl_dir = slice_nifti(swi_resized, 'swi', patient_num)
-    flair_sl_dir = slice_nifti(directory + '/' + flair_unzipped, 'FLAIR', patient_num)
+    flair_sl_dir = slice_nifti(flair_unzipped, 'FLAIR', patient_num)
 
     # Concatenate t1w + t2w horizontally to prepare data for in2i model
     concat_patient_imgs_2in1out(t1w_sl_dir, t2w_sl_dir, swi_sl_dir, patient_num)
@@ -163,8 +197,8 @@ def preprocess_2in_1out_main_test():
           "Warning - this will delete directories made by prior runs on preprocess (nii2png, processed)")
 
     shutil.rmtree('../data/mri/2in_1out')
+    shutil.rmtree('../data/processed')
     shutil.rmtree('../data/nii2png')
-    shutil.rmtree('../data/processed/2in_1out')
 
     print("testing complete")
 

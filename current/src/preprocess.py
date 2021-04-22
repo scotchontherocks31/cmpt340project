@@ -16,6 +16,8 @@ from nibabel.affines import apply_affine
 from PIL import Image
 
 TESTING = True
+CROP = False
+
 
 # Import images tool
 def import_images(directory):
@@ -51,7 +53,7 @@ def slice_nifti(nifti_image, image_type, patient_num):
     """
     save_to = '../data/nii2png/' + patient_num + '_' + image_type + '/'
     subprocess.run(["python3", "nii2png.py", "-i", nifti_image, "-o", save_to],
-                   input=b'n', stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+                   input=b'y\n90', stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     return save_to
 
 
@@ -93,28 +95,69 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
             and len(t1w_slices) == len(swi_slices):
         for i in range(len(t1w_slices)):
             # Concatenate t1w + t2w + flair
-            # TODO Only concat sets of images if none are black
+            # Remove first and last slice as they are often black
+            if i == 0 or i == len(t1w_slices) - 1:
+                continue
             concat_img = concat_png(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i],
                                     flair_slice_dir + flair_slices[i])
             concat_dest = '../data/processed/trainA/' + patient_num + \
-                          '_concat_t1_t2_flair' + str(i) + '.png'
+                          '_concat_t1_t2_flair' + str(i-1) + '.png'
             concat_img.save(concat_dest)
+
+            # Rename swi images to match convention
+            dst = swi_slice_dir + patient_num + '_swi' + str(i-1) + '.png'
+            src = swi_slice_dir + swi_slices[i]
+            os.rename(src, dst)
 
         # Move SWI into the trainB folder
         swi_dest = '../data/processed/trainB/'
+        # Remove first and last slice
+        os.remove(swi_slice_dir + swi_slices[0])
+        os.remove(swi_slice_dir + swi_slices[len(swi_slices) - 1])
         copy_tree(swi_slice_dir, swi_dest)
     else:
         print("Error: directories do not contain equal number of slices!")
         print("t1 slice len = ", len(t1w_slices), "t2 slice len = ", len(t2w_slices), "flair slice len = ",
-              len(flair_slices), "swi slice len = ", len(swi_slices), )
+              len(flair_slices), "swi slice len = ", len(swi_slices))
         return
+
+
+def crop(input_image, cropped_name='cropped.nii', tol=150, nose_reserve=8, ear_reserve=6):
+    """
+    Crops off the border of a 3D nifti image, where the border consists of pixels whose values are lower than a given tolerance level
+    :param input_image: string: path to 3D image in .nii format which will be cropped
+    :param cropped_name: path to 3D image in .nii format which was cropped
+    :param tol: Int: pixel value tolerance level
+    :param nose_reserve: Int: amount of pixels to reserve for nose
+    :param ear_reserve: Int: amount of pixels to reserve for ears
+    :return cropped_name: path to 3D image in .nii format which was cropped
+    """
+    nim = nib.load(input_image)
+    img = np.array(nim.dataobj)
+    if cropped_name == 'cropped.nii':
+        cropped_name = input_image[:-4] + '_cropped.nii'
+
+    idx = np.nonzero(img > tol)
+    x1 = max(0, idx[0].min() - ear_reserve)  # right-ear
+    y1 = max(0, idx[1].min())  # back-neck
+    z1 = max(0, idx[2].min())  # top of head
+    x2 = min(img.shape[0], idx[0].max() + 1 + ear_reserve)  # left-ear
+    y2 = min(img.shape[1], idx[1].max() + 1 + nose_reserve)  # front-face
+    z2 = min(img.shape[2], idx[2].max() + 1)  # bottom-jaw
+    img = img[x1:x2, y1:y2, z1:z2]
+
+    affine = nim.affine
+    affine[:3, 3] = np.dot(affine, np.array([x1, y1, z1, 1]))[:3]
+    cropped = nib.Nifti1Image(img, affine)
+    nib.save(cropped, cropped_name)
+    return cropped_name
 
 
 def flairVox_to_mriVox(mri_img, flair_img):
     return npl.inv(mri_img.affine).dot(flair_img.affine)
 
 
-def match_z_len_mri2FLAIR(mri, flair, img_type=None):
+def match_mri_to_FLAIR(mri, flair, img_type=None):
     mri_img = nib.load(mri)
     flair_img = nib.load(flair)
 
@@ -124,7 +167,7 @@ def match_z_len_mri2FLAIR(mri, flair, img_type=None):
     flair_vox_center_low = np.copy(flair_vox_center)
     flair_vox_center_low[2] = 0
     flair_vox_center_high = np.copy(flair_vox_center)
-    flair_vox_center_high[2] = int(flair_dim[2]-1)
+    flair_vox_center_high[2] = int(flair_dim[2])
 
     mri_vox_at_flair_low = apply_affine(flairVox_to_mriVox(mri_img, flair_img), flair_vox_center_low)
     mri_vox_at_flair_high = apply_affine(flairVox_to_mriVox(mri_img, flair_img), flair_vox_center_high)
@@ -175,23 +218,45 @@ def preprocess_dir(directory):
     # Get paths to each individual image
     t1w = list(filter(lambda x: 'T1w' in x, images))[0]
     t2w = list(filter(lambda x: 'T2w' in x, images))[0]
-    flair = list(filter(lambda x: 'FLAIR' in x, images))[0]
     swi = list(filter(lambda x: 'swi' in x, images))[0]
+    flair = list(filter(lambda x: 'FLAIR' in x, images))[0]
+
+    t1w_path = directory + '/' + t1w
+    t2w_path = directory + '/' + t2w
+    swi_path = directory + '/' + swi
+    flair_path = directory + '/' + flair
 
     # Unzip flair
-    flair_load = nib.load(directory + '/' + flair)
-    flair_unzipped = flair[:-7] + '_unzipped.nii'
-    nib.save(flair_load, directory + '/' + flair_unzipped)
+    flair_load = nib.load(flair_path)
+    flair_unzipped = '{0}/{1}_unzipped.nii'.format(directory, flair[:-7])
+    nib.save(flair_load, flair_unzipped)
 
-    # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
-    # Variables are assigned the paths to the new images
-    t1w_resized = match_z_len_mri2FLAIR(directory + '/' + t1w, directory + '/' + flair, "t1")
+    # Cropping images (comment this out if not using crop)
+    if CROP is True:
+        t1w_cropped = crop(t1w_path)
+        t2w_cropped = crop(t2w_path)
+        swi_cropped = crop(swi_path)
+        flair_cropped = crop(flair_unzipped)
+
+        # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
+        # Variables are assigned the paths to the new images
+        t1w_resized = match_mri_to_FLAIR(t1w_cropped, flair_cropped, "t1")
+        t2w_resized = match_mri_to_FLAIR(t2w_cropped, flair_cropped, "t1")
+        swi_resized = match_mri_to_FLAIR(swi_cropped, flair_cropped)
+
+    else:
+        # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
+        # Variables are assigned the paths to the new images
+        t1w_resized = match_mri_to_FLAIR(t1w_path, flair_unzipped, "t1")
+        t2w_resized = match_mri_to_FLAIR(t1w_path, flair_unzipped, "t1")
+        swi_resized = match_mri_to_FLAIR(t2w_path, flair_unzipped)
+
+    # Use to test if voxels are correctly lined up between FLAIR and other image types
+    # print("t1w : FLAIR voxel comparison in real space")
     # test_equal_vox(t1w_resized, directory + '/' + flair)
-
-    t2w_resized = match_z_len_mri2FLAIR(directory + '/' + t2w, directory + '/' + flair, "t1")
+    # print("t2w : FLAIR voxel comparison in real space")
     # test_equal_vox(t2w_resized, directory + '/' + flair)
-
-    swi_resized = match_z_len_mri2FLAIR(directory + '/' + swi, directory + '/' + flair)
+    # print("swi : FLAIR voxel comparison in real space")
     # test_equal_vox(swi_resized, directory + '/' + flair)
 
     # Get patient number from directory
@@ -201,7 +266,7 @@ def preprocess_dir(directory):
     t1w_sl_dir = slice_nifti(t1w_resized, 'T1w', patient_num)
     t2w_sl_dir = slice_nifti(t2w_resized, 'T2w', patient_num)
     swi_sl_dir = slice_nifti(swi_resized, 'swi', patient_num)
-    flair_sl_dir = slice_nifti(directory + '/' + flair_unzipped, 'FLAIR', patient_num)
+    flair_sl_dir = slice_nifti(flair_unzipped, 'FLAIR', patient_num)
 
     # Concatenate t1w + t2w + FLAIR horizontally to prepare data for in2i model
     concat_patient_imgs(t1w_sl_dir, t2w_sl_dir, flair_sl_dir, swi_sl_dir, patient_num)
