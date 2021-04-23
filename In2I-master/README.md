@@ -36,7 +36,7 @@ Year = {2018}
 - Linux or macOS
 - Python 2 or 3
 - Pytorch
-- Python packaged NumPy, SciPy, Visdom and Dominate 
+- Python packaged NumPy, SciPy, Visdom, graphviz and Dominate 
 - CPU or NVIDIA GPU + CUDA CuDNN
 
 This code was tested on a Ubuntu 16.04 installation with CUDA 9.0
