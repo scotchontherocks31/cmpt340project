@@ -31,7 +31,7 @@ def concat_png_2in1out(t1w_png, t2w_png):
     im1 = Image.open(t1w_png)
     im2 = Image.open(t2w_png)
     # TODO: Check image mode (should it be RGB?)
-    output = Image.new('RGB', (im1.width + im2.width, im1.height))
+    output = Image.new('L', (im1.width + im2.width, im1.height))
     output.paste(im1, (0, 0))
     output.paste(im2, (im1.width, 0))
     return output
@@ -61,13 +61,17 @@ def concat_patient_imgs_2in1out(t1w_slice_dir, t2w_slice_dir, swi_slice_dir, pat
                 continue
             concat_img = concat_png_2in1out(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i])
             concat_dest = '../data/processed/2in_1out/trainA/' + patient_num + \
-                          '_concat_t1_t2' + str(i) + '.png'
+                          '_concat_t1_t2_' + str(i) + '.png'
             concat_img.save(concat_dest)
 
-            # Rename swi images to match convention
+            # Rename swi images to match convention and convert to RGB
             dst = swi_slice_dir + patient_num + '_swi' + str(i-1) + '.png'
             src = swi_slice_dir + swi_slices[i]
-            os.rename(src, dst)
+            swi_img = Image.open(src)
+            rgb_swi = Image.new("RGB", (swi_img.width, swi_img.height))
+            rgb_swi.paste(swi_img)
+            rgb_swi.save(dst)
+            os.remove(src)
 
         # Move SWI into the trainB folder
         swi_dest = '../data/processed/2in_1out/trainB/'
@@ -150,8 +154,8 @@ def preprocess_dir_2in1out(directory):
 def main():
     failed_directories = []
     all_patients = os.listdir('../../current/data/mri/')
-    os.makedirs('../data/processed/2in_1out/trainA')
-    os.makedirs('../data/processed/2in_1out/trainB')
+    os.makedirs('../results/2in_1out/trainA')
+    os.makedirs('../results/2in_1out/trainB')
     for patient_dir in tqdm(all_patients):
         print("Processing: ", patient_dir)
         try:
@@ -162,6 +166,8 @@ def main():
     print("These directories raised exceptions: ")
     for f in failed_directories:
         print(f[0])
+
+    shutil.rmtree('../data/nii2png')
 
     # Use to preprocess single patient
     # preprocess_dir('../data/mri/OAS30003_MR_d1631')
