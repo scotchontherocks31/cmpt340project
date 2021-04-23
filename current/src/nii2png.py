@@ -13,7 +13,7 @@
 
 import scipy, numpy, shutil, os, nibabel
 import sys, getopt
-
+from PIL import Image
 import imageio
 
 
