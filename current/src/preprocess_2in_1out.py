@@ -18,22 +18,28 @@ from preprocess import import_images, get_MRI_dim, slice_nifti, flairVox_to_mriV
     test_equal_vox, crop
 
 
-TESTING = True
+TESTING = False
 CROP = False
 
 
-def concat_png_2in1out(t1w_png, t2w_png):
+def concat_png_2in1out(t1w_png, t2w_png, orientation='vertical'):
     """
     Concatenates png images horizontally into a single image to match required input for In2I
+    :param orientation: chose if images are concatenated horizontally or vertically
     :param t1w_png, t2w_png: string: path to png images to concatenate
     :return: concatenated image as PIL.Image class
     """
     im1 = Image.open(t1w_png)
     im2 = Image.open(t2w_png)
     # TODO: Check image mode (should it be RGB?)
-    output = Image.new('L', (im1.width + im2.width, im1.height))
-    output.paste(im1, (0, 0))
-    output.paste(im2, (im1.width, 0))
+    if orientation == 'vertical':
+        output = Image.new('L', (im1.width, im1.height + im2.height))
+        output.paste(im1, (0, 0))
+        output.paste(im2, (0, im2.height))
+    else:
+        output = Image.new('L', (im1.width + im2.width, im1.height))
+        output.paste(im1, (0, 0))
+        output.paste(im2, (im1.width, 0))
     return output
 
 
@@ -126,8 +132,8 @@ def preprocess_dir_2in1out(directory):
         # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
         # Variables are assigned the paths to the new images
         t1w_resized = match_mri_to_FLAIR(t1w_path, flair_unzipped, "t1")
-        t2w_resized = match_mri_to_FLAIR(t1w_path, flair_unzipped, "t1")
-        swi_resized = match_mri_to_FLAIR(t2w_path, flair_unzipped)
+        t2w_resized = match_mri_to_FLAIR(t2w_path, flair_unzipped, "t1")
+        swi_resized = match_mri_to_FLAIR(swi_path, flair_unzipped)
 
     # Use to test if voxels are correctly lined up between FLAIR and other image types
     # print("t1w : FLAIR voxel comparison in real space")
@@ -154,8 +160,8 @@ def preprocess_dir_2in1out(directory):
 def main():
     failed_directories = []
     all_patients = os.listdir('../../current/data/mri/')
-    os.makedirs('../results/2in_1out/trainA')
-    os.makedirs('../results/2in_1out/trainB')
+    os.makedirs('../data/processed/2in_1out/trainA')
+    os.makedirs('../data/processed/2in_1out/trainB')
     for patient_dir in tqdm(all_patients):
         print("Processing: ", patient_dir)
         try:
