@@ -315,7 +315,6 @@ def main():
 
 
 def preprocess_main_test():
-    call_extractor()
     test_dir = '../data/mri/unit_test'
     patients_to_test = ['../data/mri/OAS30004_MR_d2229',
                         '../data/mri/OAS30005_MR_d1274',

@@ -15,7 +15,7 @@ from nibabel.processing import resample_from_to, resample_to_output, conform
 from nibabel.affines import apply_affine
 from PIL import Image
 from preprocess import import_images, get_MRI_dim, slice_nifti, flairVox_to_mriVox, match_mri_to_FLAIR, \
-    test_equal_vox, crop
+    test_equal_vox, crop, call_extractor
 
 
 TESTING = True
@@ -158,6 +158,7 @@ def preprocess_dir_2in1out(directory):
 
 # Preprocess full /mri directory
 def main():
+    call_extractor()
     failed_directories = []
     all_patients = os.listdir('../../current/data/mri/')
     os.makedirs('../data/processed/2in_1out/trainA')
