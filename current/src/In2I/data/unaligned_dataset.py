@@ -39,13 +39,13 @@ class UnalignedDataset(BaseDataset):
         A_path = self.A_paths[index % self.A_size]
         index_A = index % self.A_size
         index_B = random.randint(0, self.B_size - 1)
-        B_path = self.B_paths[index_B]
+        B_path = self.B_paths[index % self.B_size]
 
         # print('(A, B) = (%d, %d)' % (index_A, index_B))
         A_img = Image.open(A_path).convert('RGB') # A image is a no_input*3 collection of images
         A_img = (self.transformA(A_img))
-        A1 = A_img[1, 0:224, :]
-        A2 = A_img[1, 224:448, :]
+        A1 = A_img[1, 0:256, :]
+        A2 = A_img[1, 256:512, :]
         A1 = A1.unsqueeze(0).numpy()
         A2 = A2.unsqueeze(0).numpy()
         B_img = Image.open(B_path).convert('RGB')

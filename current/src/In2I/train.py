@@ -4,6 +4,7 @@ from data.data_loader import CreateDataLoader
 from models.models import create_model
 from util.visualizer import Visualizer
 
+
 def main():
 
     opt = TrainOptions().parse()
