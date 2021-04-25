@@ -322,15 +322,11 @@ class ResnetGeneratorMMReverse(nn.Module):
 
         model_post1 = []
         model_post2 = []
-        model_post3 = []
         for i in range(pre_l_blocks, n_blocks):
             model_post1 += [
                 ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
                             use_bias=use_bias)]
             model_post2 += [
-                ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
-                            use_bias=use_bias)]
-            model_post3 += [
                 ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
                             use_bias=use_bias)]
 
@@ -350,13 +346,6 @@ class ResnetGeneratorMMReverse(nn.Module):
                             norm_layer(int(ngf * mult / 2)),
                             nn.ReLU(True)]
 
-            model_post3 += [nn.ConvTranspose2d(ngf * mult, int(ngf * mult / 2),
-                                               kernel_size=3, stride=2,
-                                               padding=1, output_padding=1,
-                                               bias=use_bias),
-                            norm_layer(int(ngf * mult / 2)),
-                            nn.ReLU(True)]
-
         model_post1 += [nn.ReflectionPad2d(3)]
         model_post1 += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
         model_post1 += [nn.Tanh()]
@@ -365,13 +354,8 @@ class ResnetGeneratorMMReverse(nn.Module):
         model_post2 += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
         model_post2 += [nn.Tanh()]
 
-        model_post3 += [nn.ReflectionPad2d(3)]
-        model_post3 += [nn.Conv2d(ngf, 1, kernel_size=7, padding=0)]  # HC
-        model_post3 += [nn.Tanh()]
-
         self.model_post1 = nn.Sequential(*model_post1)
         self.model_post2 = nn.Sequential(*model_post2)
-        self.model_post3 = nn.Sequential(*model_post3)
         self.model_pre = nn.Sequential(*model_pre)
         self.model = nn.Sequential(*model)
 
@@ -381,8 +365,7 @@ class ResnetGeneratorMMReverse(nn.Module):
         fuse_ip = self.model_pre(latent)
         out1 = self.model_post1(fuse_ip)
         out2 = self.model_post2(fuse_ip)
-        out3 = self.model_post3(fuse_ip)
-        return out1, out2, out3, latent
+        return out1, out2, latent
 
 
 class ResnetGeneratorMM(nn.Module):
@@ -411,12 +394,6 @@ class ResnetGeneratorMM(nn.Module):
                   norm_layer(ngf),
                   nn.ReLU(True)]
 
-        model3 = [nn.ReflectionPad2d(3),
-                  nn.Conv2d(1, ngf, kernel_size=7, padding=0,  # HC
-                            bias=use_bias),
-                  norm_layer(ngf),
-                  nn.ReLU(True)]
-
         n_downsampling = 2
         for i in range(n_downsampling):
             mult = 2 ** i
@@ -430,11 +407,6 @@ class ResnetGeneratorMM(nn.Module):
                        norm_layer(ngf * mult * 2),
                        nn.ReLU(True)]
 
-            model3 += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3,
-                                 stride=2, padding=1, bias=use_bias),
-                       norm_layer(ngf * mult * 2),
-                       nn.ReLU(True)]
-
         pre_f_blocks = 4
         pre_l_blocks = 7
         mult = 2 ** n_downsampling
@@ -444,9 +416,6 @@ class ResnetGeneratorMM(nn.Module):
                 ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
                             use_bias=use_bias)]
             model2 += [
-                ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
-                            use_bias=use_bias)]
-            model3 += [
                 ResnetBlock(ngf * mult, padding_type=padding_type, norm_layer=norm_layer, use_dropout=use_dropout,
                             use_bias=use_bias)]
         model_pre = []
@@ -472,7 +441,7 @@ class ResnetGeneratorMM(nn.Module):
         # else:
         #    raise NotImplementedError('padding [%s] is not implemented' % padding_type)
 
-        model_fusion = [nn.Conv2d(ngf * mult * 3, ngf * mult, kernel_size=3, padding=1, bias=use_bias),
+        model_fusion = [nn.Conv2d(ngf * mult * 2, ngf * mult, kernel_size=3, padding=1, bias=use_bias),
                         norm_layer(ngf * mult),
                         nn.ReLU(True)]
 
@@ -490,16 +459,14 @@ class ResnetGeneratorMM(nn.Module):
         model_post += [nn.Tanh()]
         self.model1 = nn.Sequential(*model1)
         self.model2 = nn.Sequential(*model2)
-        self.model3 = nn.Sequential(*model3)
         self.model_pre = nn.Sequential(*model_pre)
         self.model_post = nn.Sequential(*model_post)
         self.model_fusion = nn.Sequential(*model_fusion)
 
-    def forward(self, input, input2, input3):
+    def forward(self, input, input2):
         m1 = self.model1(input)
         m2 = self.model2(input2)
-        m3 = self.model3(input3)
-        latent = self.model_pre(self.model_fusion(torch.cat([m1, m2, m3], dim=1)))
+        latent = self.model_pre(self.model_fusion(torch.cat([m1, m2], dim=1)))
         out = self.model_post(latent)
         return out, latent
 

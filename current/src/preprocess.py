@@ -15,9 +15,15 @@ from nibabel.processing import resample_from_to, resample_to_output, conform
 from nibabel.affines import apply_affine
 from PIL import Image
 
-TESTING = True
+TESTING = False
 CROP = False
 
+
+def call_extractor():
+    """
+    Calls extractor.py
+    """
+    subprocess.run(["python3", "extractor.py"])
 
 # Import images tool
 def import_images(directory):
@@ -287,6 +293,7 @@ def preprocess_dir(directory):
 # Preprocess full /mri directory
 def main():
     failed_directories = []
+    call_extractor()
     all_patients = os.listdir('../../current/data/mri/')
     os.makedirs('../data/processed/trainA')
     os.makedirs('../data/processed/trainB')
@@ -308,6 +315,7 @@ def main():
 
 
 def preprocess_main_test():
+    call_extractor()
     test_dir = '../data/mri/unit_test'
     patients_to_test = ['../data/mri/OAS30004_MR_d2229',
                         '../data/mri/OAS30005_MR_d1274',

@@ -28,7 +28,7 @@ class UnalignedDataset(BaseDataset):
         osize = [opt.loadSize, opt.loadSize * self.opt.input_nc]
         opt.fineSize * self.no_input * self.opt.input_nc
         self.transformA = []
-        self.transformA.append(transforms.Scale((opt.fineSize * 3, opt.fineSize), Image.BICUBIC))
+        self.transformA.append(transforms.Scale((opt.fineSize * 2, opt.fineSize), Image.BICUBIC))
         self.transformA += [transforms.ToTensor(),
                             transforms.Normalize((0.5, 0.5, 0.5),
                                                  (0.5, 0.5, 0.5))]
@@ -38,7 +38,7 @@ class UnalignedDataset(BaseDataset):
     def __getitem__(self, index):
         A_path = self.A_paths[index % self.A_size]
         index_A = index % self.A_size
-        index_B = index % self.B_size
+        index_B = random.randint(0, self.B_size - 1)
         B_path = self.B_paths[index % self.B_size]
 
         # print('(A, B) = (%d, %d)' % (index_A, index_B))
@@ -46,10 +46,8 @@ class UnalignedDataset(BaseDataset):
         A_img = (self.transformA(A_img))
         A1 = A_img[1, 0:256, :]
         A2 = A_img[1, 256:512, :]
-        A3 = A_img[1, 512:768, :]
         A1 = A1.unsqueeze(0).numpy()
         A2 = A2.unsqueeze(0).numpy()
-        A3 = A3.unsqueeze(0).numpy()
         B_img = Image.open(B_path).convert('RGB')
         B = self.transform(B_img)
         if self.opt.which_direction == 'BtoA':
@@ -67,7 +65,7 @@ class UnalignedDataset(BaseDataset):
         # if output_nc == 1:  # RGB to gray
         #    tmp = B[0, ...] * 0.299 + B[1, ...] * 0.587 + B[2, ...] * 0.114
         #    B = tmp.unsqueeze(0)
-        return {'A1': A1, 'A2': A2, 'A3':A3, 'B': B,
+        return {'A1': A1, 'A2': A2, 'B': B,
                 'A_paths': A_path, 'B_paths': B_path}
 
     def __len__(self):
