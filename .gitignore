@@ -4,3 +4,5 @@ current/data/mri
 current/data/processed
 current/data/nii2png
 .idea
+current/data/mri-backup
+current/src/In2I/checkpoints
