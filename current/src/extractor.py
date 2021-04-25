@@ -22,7 +22,8 @@ subfolders = [f.path for f in os.scandir(mri_path) if f.is_dir()]
 
 # get desired sub dirs from total list of subfolders
 def extract_required_paths(subfolders):
-    print('Pruning path lists')
+    print('EXTRACTING REQUIRED PATH:')
+    print('\tPruning path lists...')
     nifti_paths = []
     size = len(subfolders)
     for index, row in filter_list.iterrows():
@@ -44,8 +45,8 @@ def move(source_filepath, dest_filepath):
 
 
 # extract onii-sama from .gz into subdir properly UwU
-def extract_onii_chan(subfolders):
-    print('Extracting nii-sama')
+def extract_nii(subfolders):
+    print('EXTRACTING NII FILES')
     for i in tqdm(range(len(subfolders))):
         more_subfolders = [f.path for f in os.scandir(subfolders[i]) if f.is_dir()]
         for j in tqdm(range(len(more_subfolders))):
@@ -98,7 +99,7 @@ def move(source_filepath, dest_filepath):
 
 def main():
     pruned_paths = extract_required_paths(subfolders)
-    extract_onii_chan(pruned_paths)
+    extract_nii(pruned_paths)
     print('Program complete')
 
     return
