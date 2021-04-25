@@ -15,10 +15,10 @@ from nibabel.processing import resample_from_to, resample_to_output, conform
 from nibabel.affines import apply_affine
 from PIL import Image
 from preprocess import import_images, get_MRI_dim, slice_nifti, flairVox_to_mriVox, match_mri_to_FLAIR, \
-    test_equal_vox, crop
+    test_equal_vox, crop, call_extractor
 
 
-TESTING = False
+TESTING = True
 CROP = False
 
 
@@ -33,13 +33,13 @@ def concat_png_2in1out(t1w_png, t2w_png, orientation='vertical'):
     im2 = Image.open(t2w_png)
     # TODO: Check image mode (should it be RGB?)
     if orientation == 'vertical':
-        output = Image.new('L', (im1.width, im1.height + im2.height))
-        output.paste(im1, (0, 0))
-        output.paste(im2, (0, im2.height))
+        output = Image.new('L', (256, im1.height + im2.height))
+        output.paste(im1, (16, 0))
+        output.paste(im2, (16, im2.height))
     else:
-        output = Image.new('L', (im1.width + im2.width, im1.height))
-        output.paste(im1, (0, 0))
-        output.paste(im2, (im1.width, 0))
+        output = Image.new('L', (512, im1.height))
+        output.paste(im1, (16, 0))
+        output.paste(im2, (im1.width + 32, 0))
     return output
 
 
@@ -74,8 +74,8 @@ def concat_patient_imgs_2in1out(t1w_slice_dir, t2w_slice_dir, swi_slice_dir, pat
             dst = swi_slice_dir + patient_num + '_swi' + str(i-1) + '.png'
             src = swi_slice_dir + swi_slices[i]
             swi_img = Image.open(src)
-            rgb_swi = Image.new("RGB", (swi_img.width, swi_img.height))
-            rgb_swi.paste(swi_img)
+            rgb_swi = Image.new("RGB", (256, swi_img.height))
+            rgb_swi.paste(swi_img, (16, 0))
             rgb_swi.save(dst)
             os.remove(src)
 
@@ -158,6 +158,7 @@ def preprocess_dir_2in1out(directory):
 
 # Preprocess full /mri directory
 def main():
+    call_extractor()
     failed_directories = []
     all_patients = os.listdir('../../current/data/mri/')
     os.makedirs('../data/processed/2in_1out/trainA')

@@ -1,8 +1,11 @@
 .vscode
 .DS_Store
 current/data/mri
+current/data/results
+current/data/mri_backup
 current/data/processed
 current/data/nii2png
-.idea
 current/data/mri-backup
 current/src/In2I/checkpoints
+current/src/In2I/datasets
+.idea
