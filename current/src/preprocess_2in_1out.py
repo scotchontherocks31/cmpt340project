@@ -67,7 +67,7 @@ def concat_patient_imgs_2in1out(t1w_slice_dir, t2w_slice_dir, swi_slice_dir, pat
                 continue
             concat_img = concat_png_2in1out(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i])
             concat_dest = '../data/processed/2in_1out/trainA/' + patient_num + \
-                          '_concat_t1_t2_' + str(i) + '.png'
+                          '_concat_t1_t2_' + str(i-1) + '.png'
             concat_img.save(concat_dest)
 
             # Rename swi images to match convention and convert to RGB
