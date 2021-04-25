@@ -1,0 +1,1 @@
+To run the model on two modalities, replace the files in In2I/data and In2I/models with their respective versions from this folder

@@ -1,6 +1,14 @@
 """
 preprocess.py
-Takes nifti type input and resamples it to output dimensions
+Preprocesses directory data/mri by aligning and slicing NIFTI images into png images suitible for use with In2I
+This version produces training data with 3 input modalities (T1w, T2w, and FLAIR) and 1 output modality (SWI)
+
+Instruction for use:
+- Create a backup of mri
+- Run  `python3 extractor.py`
+- Run `python3 preprocess.py` with testing set to True - no directories should throw exceptions
+- Run `python3 preprocess.py` with testing set to False
+- Copy the resulting folder '3in_1out' from data/processed to In2I/datasets/ for model training
 """
 import os
 from distutils.dir_util import copy_tree
@@ -15,15 +23,9 @@ from nibabel.processing import resample_from_to, resample_to_output, conform
 from nibabel.affines import apply_affine
 from PIL import Image
 
-TESTING = False
-CROP = False
+TESTING = True     # Set to true to process 3 patients - results will be deleted when the script ends for easy testing
+CROP = False        # Crops black space from images - not required to produce output suitible for model training
 
-
-def call_extractor():
-    """
-    Calls extractor.py
-    """
-    subprocess.run(["python3", "extractor.py"])
 
 # Import images tool
 def import_images(directory):
@@ -65,14 +67,14 @@ def slice_nifti(nifti_image, image_type, patient_num):
 
 def concat_png(t1w_png, t2w_png, flair_png, orientation='vertical'):
     """
-    Concatenates png images horizontally into a single image to match required input for In2I
+    Concatenates png images into a single image to match required input for In2I
     :param t1w_png, t2w_png, swi_png: string: path to png images to concatenate
+    :param orientation: string: if 'vertical', images will be concatenated vertically, otherwise horizontally
     :return: concatenated image as PIL.Image class
     """
     im1 = Image.open(t1w_png)
     im2 = Image.open(t2w_png)
     im3 = Image.open(flair_png)
-    # TODO: Check image mode (should it be RGB?)
     if orientation == 'vertical':
         output = Image.new('L', (256, im1.height + im2.height + im3.height))
         output.paste(im1, (16, 0))
@@ -107,12 +109,12 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
             and len(t1w_slices) == len(swi_slices):
         for i in range(len(t1w_slices)):
             # Concatenate t1w + t2w + flair
-            # Remove first and last slice as they are often black
+            # Skip first and last slice as they are often fully black
             if i == 0 or i == len(t1w_slices) - 1:
                 continue
             concat_img = concat_png(t1w_slice_dir + t1w_slices[i], t2w_slice_dir + t2w_slices[i],
                                     flair_slice_dir + flair_slices[i])
-            concat_dest = '../data/processed/trainA/' + patient_num + \
+            concat_dest = '../data/processed/3in_1out/trainA/' + patient_num + \
                           '_concat_t1_t2_flair_' + str(i-1) + '.png'
             concat_img.save(concat_dest)
 
@@ -126,7 +128,7 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
             os.remove(src)
 
         # Move SWI into the trainB folder
-        swi_dest = '../data/processed/trainB/'
+        swi_dest = '../data/processed/3in_1out/trainB/'
         # Remove first and last slice
         os.remove(swi_slice_dir + swi_slices[0])
         os.remove(swi_slice_dir + swi_slices[len(swi_slices) - 1])
@@ -170,39 +172,61 @@ def crop(input_image, cropped_name='cropped.nii', tol=150, nose_reserve=8, ear_r
 
 
 def flairVox_to_mriVox(mri_img, flair_img):
+    """
+    :param mri_img: A MRI image in NIB format
+    :param flair_img: A FLAIR image in NIB format
+    :return: Returns the affine matrix which maps voxels in FLAIR to voxels in MRI which have the same
+     real world coordinates
+    """
     return npl.inv(mri_img.affine).dot(flair_img.affine)
 
 
 def match_mri_to_FLAIR(mri, flair, img_type=None):
+    """
+    :param mri: string: Path to MRI image
+    :param flair: string: Path to FLAIR image
+    :param img_type: Used to specify if an image is t1w / t2w (1mm slices), or swi (2mm slices).
+    :return: string: Path to the cropped and aligned MRI image
+    """
     mri_img = nib.load(mri)
     flair_img = nib.load(flair)
 
     flair_dim = get_MRI_dim(flair)
 
-    flair_vox_center = (np.array(flair_img.shape) - 1) / 2.
-    flair_vox_center_low = np.copy(flair_vox_center)
+    flair_vox_center = (np.array(flair_img.shape) - 1) / 2.         # Find the center voxel of the FLAIR image
+    flair_vox_center_low = np.copy(flair_vox_center)        # Get the center voxel at (i, j, min(k))
     flair_vox_center_low[2] = 0
-    flair_vox_center_high = np.copy(flair_vox_center)
+    flair_vox_center_high = np.copy(flair_vox_center)       # Get the center voxel at (i, j, max(k))
     flair_vox_center_high[2] = int(flair_dim[2])
 
+    # Apply the affine to get the voxels in the MRI image which correspond to the center low and high in the
+    # FLAIR image
     mri_vox_at_flair_low = apply_affine(flairVox_to_mriVox(mri_img, flair_img), flair_vox_center_low)
     mri_vox_at_flair_high = apply_affine(flairVox_to_mriVox(mri_img, flair_img), flair_vox_center_high)
 
     # Crop the image
     # print("orig dimensions: ", mri_img.shape)
-    if img_type == "t1":
+    if img_type == "t":
         mri_img_cropped = mri_img.slicer[:, :, round(mri_vox_at_flair_low[2]):round(mri_vox_at_flair_high[2]):6]
     else:
         mri_img_cropped = mri_img.slicer[:, :, round(mri_vox_at_flair_low[2]):round(mri_vox_at_flair_high[2]):3]
+    # Ensure the conformed image matches the affine which defines the FLAIR shape (0.82mm, 0.82mm, 6mm)
     mri_img_cropped = conform(mri_img_cropped, flair_img.shape, [0.82, 0.82, 6])
     # print("cropped dimensions: ", mri_img_cropped.shape)
 
+    # Same the image with the suffix _resized
     output_name = mri[:-7] + '_resized.nii'
     nib.save(mri_img_cropped, output_name)
     return output_name
 
 
 def test_equal_vox(img1_path, img2_path):
+    """
+    :param img1_path: string: path to MRI image 1
+    :param img2_path: string: path to MRI image 2
+    Prints the real world coordinates in (x, y, z) format for the center voxel in each slice. Can be used to ensure
+    that images are lined up properly (values should be identical in both images across corresponding slices)
+    """
     # Load images
     img1 = nib.load(img1_path)
     img2 = nib.load(img2_path)
@@ -237,6 +261,7 @@ def preprocess_dir(directory):
     swi = list(filter(lambda x: 'swi' in x, images))[0]
     flair = list(filter(lambda x: 'FLAIR' in x, images))[0]
 
+    # Create var for each path
     t1w_path = directory + '/' + t1w
     t2w_path = directory + '/' + t2w
     swi_path = directory + '/' + swi
@@ -247,8 +272,8 @@ def preprocess_dir(directory):
     flair_unzipped = '{0}/{1}_unzipped.nii'.format(directory, flair[:-7])
     nib.save(flair_load, flair_unzipped)
 
-    # Cropping images (comment this out if not using crop)
     if CROP is True:
+        # Crop images
         t1w_cropped = crop(t1w_path)
         t2w_cropped = crop(t2w_path)
         swi_cropped = crop(swi_path)
@@ -256,15 +281,15 @@ def preprocess_dir(directory):
 
         # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
         # Variables are assigned the paths to the new images
-        t1w_resized = match_mri_to_FLAIR(t1w_cropped, flair_cropped, "t1")
-        t2w_resized = match_mri_to_FLAIR(t2w_cropped, flair_cropped, "t1")
+        t1w_resized = match_mri_to_FLAIR(t1w_cropped, flair_cropped, "t")
+        t2w_resized = match_mri_to_FLAIR(t2w_cropped, flair_cropped, "t")
         swi_resized = match_mri_to_FLAIR(swi_cropped, flair_cropped)
 
     else:
         # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
         # Variables are assigned the paths to the new images
-        t1w_resized = match_mri_to_FLAIR(t1w_path, flair_unzipped, "t1")
-        t2w_resized = match_mri_to_FLAIR(t2w_path, flair_unzipped, "t1")
+        t1w_resized = match_mri_to_FLAIR(t1w_path, flair_unzipped, "t")
+        t2w_resized = match_mri_to_FLAIR(t2w_path, flair_unzipped, "t")
         swi_resized = match_mri_to_FLAIR(swi_path, flair_unzipped)
 
     # Use to test if voxels are correctly lined up between FLAIR and other image types
@@ -278,8 +303,6 @@ def preprocess_dir(directory):
     # Get patient number from directory
     patient_num = directory[-14:]
 
-
-
     # slice each MRI image into 2d png images along the horizontal plane
     t1w_sl_dir = slice_nifti(t1w_resized, 'T1w', patient_num)
     t2w_sl_dir = slice_nifti(t2w_resized, 'T2w', patient_num)
@@ -292,15 +315,18 @@ def preprocess_dir(directory):
 
 # Preprocess full /mri directory
 def main():
-    failed_directories = []
-    call_extractor()
-    all_patients = os.listdir('../../current/data/mri/')
-    os.makedirs('../data/processed/trainA')
-    os.makedirs('../data/processed/trainB')
+    failed_directories = []     # Used to store directories which throw exceptions
+    all_patients = os.listdir('../../current/data/mri/')    # Get list of all patient directories
+    # Create directories for storage of output data
+    os.makedirs('../data/processed/3in_1out/trainA')
+    os.makedirs('../data/processed/3in_1out/trainB')
+
+    # Preprocess each patient directory
     for patient_dir in tqdm(all_patients):
         print("Processing: ", patient_dir)
         try:
             preprocess_dir('../../current/data/mri/' + patient_dir)
+        # If a directory throws an exception, keep track of it but continue processing the next directory
         except Exception as e:
             print(e)
             failed_directories.append([patient_dir])
@@ -309,19 +335,24 @@ def main():
     for f in failed_directories:
         print(f[0])
 
-    shutil.rmtree('../data/nii2png')
+    shutil.rmtree('../data/nii2png')    # clean up
     # Use to preprocess single patient
     # preprocess_dir('../data/mri/OAS30003_MR_d1631')
 
 
 def preprocess_main_test():
+    """
+    Unit test which clones three patients into a separate folder.
+    Allows for preprocess to be run and results to be checked before returning file structure to state it was in before
+    the function was called. This allows for changes to be tested without risk of compromising the dataset.
+    """
     test_dir = '../data/mri/unit_test'
     patients_to_test = ['../data/mri/OAS30004_MR_d2229',
                         '../data/mri/OAS30005_MR_d1274',
                         '../data/mri/OAS30009_MR_d1210']
-    os.mkdir(test_dir)
-    os.makedirs('../data/processed/trainA')
-    os.makedirs('../data/processed/trainB')
+    os.mkdir(test_dir)      # create directory to clone patients into
+    os.makedirs('../data/processed/3in_1out/trainA')
+    os.makedirs('../data/processed/3in_1out/trainB')
     for patient in patients_to_test:
         patient_num = patient[-14:]
         copy_tree(patient, test_dir + '/' + patient_num)
@@ -343,6 +374,7 @@ def preprocess_main_test():
     input("Press any key to complete test, and destroy created directories. \n"
           "Warning - this will delete directories made by prior runs on preprocess (nii2png, processed)")
 
+    # Clean up
     shutil.rmtree('../data/mri/unit_test')
     shutil.rmtree('../data/nii2png')
     shutil.rmtree('../data/processed')

@@ -1,6 +1,14 @@
 """
-preprocess.py
-Takes nifti type input and resamples it to output dimensions
+preprocess_2in_1out.py
+Preprocesses directory data/mri by aligning and slicing NIFTI images into png images suitible for use with In2I
+This version produces training data with 2 input modalities (T1w, T2w) and 1 output modality (SWI)
+
+Instruction for use:
+- Create a backup of mri
+- Run  `python3 extractor.py`
+- Run `python3 preprocess_2in_1out.py` with testing set to True - no directories should throw exceptions
+- Run `python3 preprocess_2in_1out.py` with testing set to False
+- Copy the resulting folder '2in_1out' from data/processed to In2I/datasets/ for model training
 """
 import os
 from distutils.dir_util import copy_tree
@@ -15,7 +23,7 @@ from nibabel.processing import resample_from_to, resample_to_output, conform
 from nibabel.affines import apply_affine
 from PIL import Image
 from preprocess import import_images, get_MRI_dim, slice_nifti, flairVox_to_mriVox, match_mri_to_FLAIR, \
-    test_equal_vox, crop, call_extractor
+    test_equal_vox, crop
 
 
 TESTING = True
@@ -31,7 +39,6 @@ def concat_png_2in1out(t1w_png, t2w_png, orientation='vertical'):
     """
     im1 = Image.open(t1w_png)
     im2 = Image.open(t2w_png)
-    # TODO: Check image mode (should it be RGB?)
     if orientation == 'vertical':
         output = Image.new('L', (256, im1.height + im2.height))
         output.paste(im1, (16, 0))
@@ -51,7 +58,6 @@ def concat_patient_imgs_2in1out(t1w_slice_dir, t2w_slice_dir, swi_slice_dir, pat
 
     :param t1w_slice_dir: string: path to directory of t1w slice png images
     :param t2w_slice_dir: string: path to directory of t2w slice png images
-    :param flair_slice_dir: string: path to directory of flair slice png images
     :param swi_slice_dir: string: path to directory of swi slice png images
     :param patient_num: string: patient number
     """
@@ -93,9 +99,9 @@ def concat_patient_imgs_2in1out(t1w_slice_dir, t2w_slice_dir, swi_slice_dir, pat
 
 def preprocess_dir_2in1out(directory):
     """
-    Preprocesses T1w, T2w, FLAIR, and SWI images for a single patient. Preprocessing includes resizing (downsampling and
-    interpolation), creating 2D horizontal slices from 3D images in .nii format, and concatenation of T1w, T2w, and
-    FLAIR images into a single image for input into the In2I model
+    Preprocesses T1w, T2w, and SWI images for a single patient. Preprocessing includes resizing (downsampling and
+    interpolation), creating 2D horizontal slices from 3D images in .nii format, and concatenation of T1w and T2w
+    images into a single image for input into the In2I model
     :param directory: string: Path to directory to preprocess
     """
     images = import_images(directory)
@@ -115,14 +121,14 @@ def preprocess_dir_2in1out(directory):
     flair_unzipped = '{0}/{1}_unzipped.nii'.format(directory, flair[:-7])
     nib.save(flair_load, flair_unzipped)
 
-    # Cropping images (comment this out if not using crop)
     if CROP is True:
         t1w_cropped = crop(t1w_path)
         t2w_cropped = crop(t2w_path)
         swi_cropped = crop(swi_path)
         flair_cropped = crop(flair_unzipped)
 
-        # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR
+        # Crop and resize t1w, t2w, and swi Z dimension to match FLAIR (keeps consistency between 2 modality and 3
+        # modality models
         # Variables are assigned the paths to the new images
         t1w_resized = match_mri_to_FLAIR(t1w_cropped, flair_cropped, "t1")
         t2w_resized = match_mri_to_FLAIR(t2w_cropped, flair_cropped, "t1")
@@ -158,7 +164,6 @@ def preprocess_dir_2in1out(directory):
 
 # Preprocess full /mri directory
 def main():
-    call_extractor()
     failed_directories = []
     all_patients = os.listdir('../../current/data/mri/')
     os.makedirs('../data/processed/2in_1out/trainA')
