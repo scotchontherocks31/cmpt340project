@@ -15,7 +15,7 @@ from nibabel.processing import resample_from_to, resample_to_output, conform
 from nibabel.affines import apply_affine
 from PIL import Image
 
-TESTING = False
+TESTING = True
 CROP = False
 
 
@@ -68,15 +68,15 @@ def concat_png(t1w_png, t2w_png, flair_png, orientation='vertical'):
     im3 = Image.open(flair_png)
     # TODO: Check image mode (should it be RGB?)
     if orientation == 'vertical':
-        output = Image.new('L', (im1.width, im1.height + im2.height + im3.height))
-        output.paste(im1, (0, 0))
-        output.paste(im2, (0, im2.height))
-        output.paste(im3, (0, im1.height + im2.height))
+        output = Image.new('L', (256, im1.height + im2.height + im3.height))
+        output.paste(im1, (16, 0))
+        output.paste(im2, (16, im2.height))
+        output.paste(im3, (16, im1.height + im2.height))
     else:
-        output = Image.new('L', (im1.width + im2.width + im3.width, im1.height))
-        output.paste(im1, (0, 0))
-        output.paste(im2, (im1.width, 0))
-        output.paste(im3, (im1.width + im2.width, 0))
+        output = Image.new('L', (768, im1.height))
+        output.paste(im1, (16, 0))
+        output.paste(im2, (im1.width + 32, 0))
+        output.paste(im3, (im1.width + im2.width + 64, 0))
 
     return output
 
@@ -114,8 +114,8 @@ def concat_patient_imgs(t1w_slice_dir, t2w_slice_dir, flair_slice_dir, swi_slice
             dst = swi_slice_dir + patient_num + '_swi' + str(i-1) + '.png'
             src = swi_slice_dir + swi_slices[i]
             swi_img = Image.open(src)
-            rgb_swi = Image.new("RGB", (swi_img.width, swi_img.height))
-            rgb_swi.paste(swi_img)
+            rgb_swi = Image.new("RGB", (256, swi_img.height))
+            rgb_swi.paste(swi_img, (16, 0))
             rgb_swi.save(dst)
             os.remove(src)
 
